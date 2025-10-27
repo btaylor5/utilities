@@ -8,16 +8,16 @@
 ## Commands to Implement
 
 ### clone
-- [ ] Accept required parameter: repository (git URL)
-- [ ] Accept required parameter: name (directory name)
-- [ ] Validate that both parameters are provided before continuing
-- [ ] Create new directory {name} as working directory
-- [ ] Execute `git clone {repo} --bare` into `.bare-repo` folder (within {name})
-- [ ] Update git config to point to the bare-repo clone
-- [ ] Create folder `{name}/worktree-config`
-- [ ] Generate empty shell script in `worktree-config` folder
-- [ ] Add error handling for git operations
-- [ ] Add error handling for directory creation
+- [x] Accept required parameter: repository (git URL)
+- [x] Accept required parameter: name (directory name)
+- [x] Validate that both parameters are provided before continuing
+- [x] Create new directory {name} as working directory
+- [x] Execute `git clone {repo} --bare` into `.bare-repo` folder (within {name})
+- [x] Update git config to point to the bare-repo clone
+- [x] Create folder `{name}/worktree-config`
+- [x] Generate empty shell script in `worktree-config` folder
+- [x] Add error handling for git operations
+- [x] Add error handling for directory creation
 - [ ] Update help command with clone documentation
 
 ### add
