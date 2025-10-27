@@ -30,7 +30,7 @@ cmd_clone() {
         error_exit "Directory '$name' already exists"
     fi
 
-    echo "Creating directory structure for '$name'..."
+    echo "📁 Creating directory structure for '$name'..."
 
     # Create main directory
     if ! mkdir "$name"; then
@@ -38,48 +38,48 @@ cmd_clone() {
     fi
 
     # Clone bare repository
-    echo "Cloning repository into bare repo..."
+    echo "🔄 Cloning repository into bare repo..."
     if ! git clone "$repository" --bare "$name/.bare-repo" 2>&1; then
         rm -rf "$name"
         error_exit "Git clone failed for repository '$repository'"
     fi
 
     # Update git config to point worktree to the bare repo
-    echo "Configuring git worktree settings..."
+    echo "⚙️  Configuring git worktree settings..."
     if ! (cd "$name" && git --git-dir=.bare-repo config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" 2>&1); then
         rm -rf "$name"
         error_exit "Failed to configure git remote fetch settings"
     fi
 
     # Create worktree-config directory
-    echo "Creating worktree configuration directory..."
+    echo "📝 Creating worktree configuration directory..."
     if ! mkdir -p "$name/worktree-config"; then
         rm -rf "$name"
         error_exit "Failed to create worktree-config directory"
     fi
 
-    # Generate empty setup script in worktree-config
-    local setup_script="$name/worktree-config/setup.sh"
-    if ! cat > "$setup_script" << 'EOF'
+    # Generate empty init script in worktree-config
+    local init_script="$name/worktree-config/worktree-Init.sh"
+    if ! cat > "$init_script" << 'EOF'
 #!/bin/bash
-# Worktree setup script
+# Worktree initialization script
 # Add any setup commands that should run when creating new worktrees
 
 EOF
     then
         rm -rf "$name"
-        error_exit "Failed to create setup script"
+        error_exit "Failed to create initialization script"
     fi
 
-    # Make setup script executable
-    if ! chmod +x "$setup_script"; then
+    # Make init script executable
+    if ! chmod +x "$init_script"; then
         rm -rf "$name"
-        error_exit "Failed to make setup script executable"
+        error_exit "Failed to make initialization script executable"
     fi
 
-    echo "Success! Repository cloned to '$name/.bare-repo'"
-    echo "Use 'git worktree add' from within '$name' to create worktrees"
-    echo "Configuration stored in '$name/worktree-config/'"
+    echo "✅ Success! Repository cloned to '$name/.bare-repo'"
+    echo "💡 Use 'git worktree add' from within '$name' to create worktrees"
+    echo "📂 Configuration stored in '$name/worktree-config/'"
 }
 
 cmd_add() {
