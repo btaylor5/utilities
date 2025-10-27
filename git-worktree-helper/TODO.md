@@ -8,10 +8,17 @@
 ## Commands to Implement
 
 ### clone
-- [ ] Implement clone functionality
-- [ ] Add argument parsing
-- [ ] Add error handling
-- [ ] Add documentation
+- [ ] Accept required parameter: repository (git URL)
+- [ ] Accept required parameter: name (directory name)
+- [ ] Validate that both parameters are provided before continuing
+- [ ] Create new directory {name} as working directory
+- [ ] Execute `git clone {repo} --bare` into `.bare-repo` folder (within {name})
+- [ ] Update git config to point to the bare-repo clone
+- [ ] Create folder `{name}/worktree-config`
+- [ ] Generate empty shell script in `worktree-config` folder
+- [ ] Add error handling for git operations
+- [ ] Add error handling for directory creation
+- [ ] Update help command with clone documentation
 
 ### add
 - [ ] Implement add functionality
@@ -27,8 +34,11 @@
 
 ### help
 - [ ] Implement help functionality
-- [ ] Document all commands
-- [ ] Add usage examples
+- [ ] Document clone command (repository, name parameters)
+- [ ] Document add command
+- [ ] Document remove command
+- [ ] Document generate-autocomplete command
+- [ ] Add usage examples for each command
 - [ ] Add command descriptions
 
 ### generate-autocomplete
