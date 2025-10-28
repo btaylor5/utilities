@@ -101,6 +101,16 @@ cmd_add() {
         error_exit "Failed to fetch from remote"
     fi
 
+    # Detect the default remote branch (main or master)
+    local default_branch=""
+    if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/main"; then
+        default_branch="origin/main"
+    elif git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/master"; then
+        default_branch="origin/master"
+    else
+        error_exit "Could not find origin/main or origin/master branch"
+    fi
+
     # Check if branch exists on remote
     local remote_branch_exists=false
     if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/$name"; then
@@ -118,25 +128,20 @@ cmd_add() {
             base_branch="origin/$name"
             echo "✓ Will create worktree from remote branch 'origin/$name'"
         else
-            echo "✓ Will create worktree from current HEAD"
+            base_branch="$default_branch"
+            echo "✓ Will create worktree from $default_branch"
         fi
     else
-        echo "ℹ️  Branch does not exist on remote. Creating new branch from current HEAD."
+        base_branch="$default_branch"
+        echo "ℹ️  Branch does not exist on remote. Creating new branch from $default_branch."
     fi
 
     # Create the worktree
     echo "📁 Creating worktree '$name'..."
 
-    if [ -n "$base_branch" ]; then
-        # Create worktree from remote branch
-        if ! git --git-dir=.bare-repo worktree add "$name" -b "$name" "$base_branch" 2>&1; then
-            error_exit "Failed to create worktree from remote branch"
-        fi
-    else
-        # Create worktree from current HEAD or with no base
-        if ! git --git-dir=.bare-repo worktree add "$name" -b "$name" 2>&1; then
-            error_exit "Failed to create worktree"
-        fi
+    # Create worktree from the selected base branch
+    if ! git --git-dir=.bare-repo worktree add "$name" -b "$name" "$base_branch" 2>&1; then
+        error_exit "Failed to create worktree from $base_branch"
     fi
 
     # Run initialization script if it exists
