@@ -83,8 +83,72 @@ EOF
 }
 
 cmd_add() {
-    # TODO: Implement add functionality
-    echo "Add command not yet implemented"
+    local name="$1"
+
+    # Validate parameter
+    if [ -z "$name" ]; then
+        error_exit "Branch name is required. Usage: wtree.sh add <branch-name>"
+    fi
+
+    # Check if we're in a wtree repository (has .bare-repo)
+    if [ ! -d ".bare-repo" ]; then
+        error_exit "Not in a wtree repository. Run this command from the repository root (where .bare-repo exists)"
+    fi
+
+    # Fetch latest from remote
+    echo "🔄 Fetching latest from remote..."
+    if ! git --git-dir=.bare-repo fetch origin 2>&1; then
+        error_exit "Failed to fetch from remote"
+    fi
+
+    # Check if branch exists on remote
+    local remote_branch_exists=false
+    if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/$name"; then
+        remote_branch_exists=true
+    fi
+
+    local base_branch=""
+
+    if [ "$remote_branch_exists" = true ]; then
+        echo "🌿 Remote branch 'origin/$name' exists."
+        read -p "Do you want to base your worktree off the remote branch? (y/n): " -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            base_branch="origin/$name"
+            echo "✓ Will create worktree from remote branch 'origin/$name'"
+        else
+            echo "✓ Will create worktree from current HEAD"
+        fi
+    else
+        echo "ℹ️  Branch does not exist on remote. Creating new branch from current HEAD."
+    fi
+
+    # Create the worktree
+    echo "📁 Creating worktree '$name'..."
+
+    if [ -n "$base_branch" ]; then
+        # Create worktree from remote branch
+        if ! git --git-dir=.bare-repo worktree add "$name" -b "$name" "$base_branch" 2>&1; then
+            error_exit "Failed to create worktree from remote branch"
+        fi
+    else
+        # Create worktree from current HEAD or with no base
+        if ! git --git-dir=.bare-repo worktree add "$name" -b "$name" 2>&1; then
+            error_exit "Failed to create worktree"
+        fi
+    fi
+
+    # Run initialization script if it exists
+    if [ -x "worktree-config/worktree-Init.sh" ]; then
+        echo "⚙️  Running initialization script..."
+        if ! (cd "$name" && ../worktree-config/worktree-Init.sh); then
+            echo "⚠️  Warning: Initialization script failed"
+        fi
+    fi
+
+    echo "✅ Success! Worktree created at '$name'"
+    echo "💡 Use 'cd $name' to switch to the new worktree"
 }
 
 cmd_remove() {
