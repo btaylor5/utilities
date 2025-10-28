@@ -338,8 +338,155 @@ cmd_add() {
 }
 
 cmd_remove() {
-    # TODO: Implement remove functionality
-    echo "Remove command not yet implemented"
+    local name=""
+    local force=false
+    local delete_branch=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f)
+                force=true
+                shift
+                ;;
+            --delete-branch|-d)
+                delete_branch=true
+                shift
+                ;;
+            -*)
+                error_exit "Unknown option: $1. Usage: wtree.sh remove <worktree-name> [--force] [--delete-branch]"
+                ;;
+            *)
+                if [ -z "$name" ]; then
+                    name="$1"
+                    shift
+                else
+                    error_exit "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    # Validate parameters
+    if [ -z "$name" ]; then
+        error_exit "Worktree name is required. Usage: wtree.sh remove <worktree-name> [--force] [--delete-branch]"
+    fi
+
+    # Check if we're in a wtree repository (has .bare-repo)
+    if [ ! -d ".bare-repo" ]; then
+        error_exit "Not in a wtree repository. Run this command from the repository root (where .bare-repo exists)"
+    fi
+
+    # Check if worktree exists
+    if [ ! -d "$name" ]; then
+        error_exit "Worktree '$name' does not exist"
+    fi
+
+    # Verify it's actually a worktree
+    if ! git --git-dir=.bare-repo worktree list | grep -q "/$name "; then
+        error_exit "'$name' exists but is not a git worktree"
+    fi
+
+    # Get the branch name for this worktree
+    local branch_name=""
+    branch_name=$(git --git-dir=.bare-repo worktree list --porcelain | grep -A 2 "/$name$" | grep "^branch" | sed 's/branch refs\/heads\///')
+
+    if [ -z "$branch_name" ]; then
+        echo "⚠️  Warning: Could not determine branch name for worktree '$name'"
+        echo "   This might be a detached HEAD worktree"
+    else
+        echo "🔍 Checking merge status of branch '$branch_name'..."
+
+        # Fetch latest from remote
+        echo "🔄 Fetching latest from remote..."
+        if ! git --git-dir=.bare-repo fetch origin 2>&1; then
+            echo "⚠️  Warning: Failed to fetch from remote. Merge status check may be inaccurate."
+        fi
+
+        # Detect the default remote branch (main or master)
+        local default_branch=""
+        if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/main"; then
+            default_branch="origin/main"
+        elif git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/master"; then
+            default_branch="origin/master"
+        else
+            echo "⚠️  Warning: Could not find origin/main or origin/master branch"
+        fi
+
+        if [ -n "$default_branch" ]; then
+            # Check if the branch is merged into the default remote branch
+            local is_merged=false
+
+            # Get the commit hash of the branch
+            local branch_commit=""
+            branch_commit=$(git --git-dir=.bare-repo rev-parse "refs/heads/$branch_name" 2>/dev/null)
+
+            if [ -n "$branch_commit" ]; then
+                # Check if this commit is an ancestor of the default branch (i.e., it's been merged)
+                if git --git-dir=.bare-repo merge-base --is-ancestor "refs/heads/$branch_name" "$default_branch" 2>/dev/null; then
+                    is_merged=true
+                fi
+            fi
+
+            if [ "$is_merged" = true ]; then
+                echo "✓ Branch '$branch_name' has been merged into $default_branch"
+            else
+                echo "⚠️  Branch '$branch_name' has NOT been merged into $default_branch"
+
+                if [ "$force" = false ]; then
+                    echo ""
+                    echo "The branch may contain unmerged changes. Options:"
+                    echo "  1. Merge or push your changes first"
+                    echo "  2. Use --force flag to remove anyway: wtree.sh remove $name --force"
+                    echo ""
+                    read -p "Do you want to remove this worktree anyway? (y/n): " -n 1 -r
+                    echo
+
+                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                        echo "❌ Removal cancelled"
+                        exit 0
+                    fi
+                fi
+            fi
+        fi
+    fi
+
+    # Remove the worktree
+    echo "🗑️  Removing worktree '$name'..."
+    if ! git --git-dir=.bare-repo worktree remove "$name" 2>&1; then
+        echo "⚠️  Failed to remove worktree with git command. Trying with --force..."
+        if ! git --git-dir=.bare-repo worktree remove "$name" --force 2>&1; then
+            error_exit "Failed to remove worktree '$name'"
+        fi
+    fi
+
+    echo "✅ Worktree '$name' removed successfully"
+
+    # Handle branch deletion if requested
+    if [ "$delete_branch" = true ] && [ -n "$branch_name" ]; then
+        echo "🌿 Deleting local branch '$branch_name'..."
+        if git --git-dir=.bare-repo branch -d "$branch_name" 2>&1; then
+            echo "✅ Local branch '$branch_name' deleted"
+        else
+            echo "⚠️  Could not delete branch with -d (branch may not be fully merged)"
+            read -p "Force delete the branch? This will lose any unmerged changes. (y/n): " -n 1 -r
+            echo
+
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                if git --git-dir=.bare-repo branch -D "$branch_name" 2>&1; then
+                    echo "✅ Local branch '$branch_name' force deleted"
+                else
+                    echo "⚠️  Warning: Failed to delete branch '$branch_name'"
+                fi
+            else
+                echo "ℹ️  Branch '$branch_name' was not deleted"
+            fi
+        fi
+    elif [ -n "$branch_name" ]; then
+        echo "💡 Tip: The local branch '$branch_name' still exists."
+        echo "   To delete it, use: git --git-dir=.bare-repo branch -d $branch_name"
+        echo "   Or run: wtree.sh remove $name --delete-branch"
+    fi
 }
 
 cmd_help() {
