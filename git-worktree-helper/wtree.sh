@@ -83,11 +83,43 @@ EOF
 }
 
 cmd_add() {
-    local name="$1"
+    local name=""
+    local from_remote=false
+    local start_fresh=false
 
-    # Validate parameter
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from-remote)
+                from_remote=true
+                shift
+                ;;
+            --start-fresh)
+                start_fresh=true
+                shift
+                ;;
+            -*)
+                error_exit "Unknown option: $1. Usage: wtree.sh add <branch-name> [--from-remote|--start-fresh]"
+                ;;
+            *)
+                if [ -z "$name" ]; then
+                    name="$1"
+                    shift
+                else
+                    error_exit "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    # Validate parameters
     if [ -z "$name" ]; then
-        error_exit "Branch name is required. Usage: wtree.sh add <branch-name>"
+        error_exit "Branch name is required. Usage: wtree.sh add <branch-name> [--from-remote|--start-fresh]"
+    fi
+
+    # Check for conflicting flags
+    if [ "$from_remote" = true ] && [ "$start_fresh" = true ]; then
+        error_exit "Cannot use both --from-remote and --start-fresh flags"
     fi
 
     # Check if we're in a wtree repository (has .bare-repo)
@@ -119,7 +151,20 @@ cmd_add() {
 
     local base_branch=""
 
-    if [ "$remote_branch_exists" = true ]; then
+    # Handle --from-remote flag
+    if [ "$from_remote" = true ]; then
+        if [ "$remote_branch_exists" = true ]; then
+            base_branch="origin/$name"
+            echo "✓ Using remote branch 'origin/$name'"
+        else
+            error_exit "Remote branch 'origin/$name' does not exist. Use --start-fresh to create from $default_branch"
+        fi
+    # Handle --start-fresh flag
+    elif [ "$start_fresh" = true ]; then
+        base_branch="$default_branch"
+        echo "✓ Creating new branch from $default_branch"
+    # Interactive mode (no flags)
+    elif [ "$remote_branch_exists" = true ]; then
         echo "🌿 Remote branch 'origin/$name' exists."
         read -p "Do you want to base your worktree off the remote branch? (y/n): " -n 1 -r
         echo
