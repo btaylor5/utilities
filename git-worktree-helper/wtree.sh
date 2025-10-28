@@ -11,6 +11,51 @@ error_exit() {
     exit 1
 }
 
+# Helper functions
+
+# Verify we're in a wtree repository
+verify_wtree_repo() {
+    if [ ! -d ".bare-repo" ]; then
+        error_exit "Not in a wtree repository. Run this command from the repository root (where .bare-repo exists)"
+    fi
+}
+
+# Fetch latest from remote
+fetch_from_remote() {
+    local show_warning="${1:-false}"
+
+    echo "🔄 Fetching latest from remote..."
+    if ! git --git-dir=.bare-repo fetch origin 2>&1; then
+        if [ "$show_warning" = "true" ]; then
+            echo "⚠️  Warning: Failed to fetch from remote. Merge status check may be inaccurate."
+            return 1
+        else
+            error_exit "Failed to fetch from remote"
+        fi
+    fi
+    return 0
+}
+
+# Get the default branch (origin/main or origin/master)
+get_default_branch() {
+    local error_on_missing="${1:-true}"
+
+    if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/main"; then
+        echo "origin/main"
+        return 0
+    elif git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/master"; then
+        echo "origin/master"
+        return 0
+    else
+        if [ "$error_on_missing" = "true" ]; then
+            error_exit "Could not find origin/main or origin/master branch"
+        else
+            echo "⚠️  Warning: Could not find origin/main or origin/master branch"
+            return 1
+        fi
+    fi
+}
+
 # Command functions
 cmd_clone() {
     local repository="$1"
@@ -205,25 +250,14 @@ cmd_add() {
     fi
 
     # Check if we're in a wtree repository (has .bare-repo)
-    if [ ! -d ".bare-repo" ]; then
-        error_exit "Not in a wtree repository. Run this command from the repository root (where .bare-repo exists)"
-    fi
+    verify_wtree_repo
 
     # Fetch latest from remote
-    echo "🔄 Fetching latest from remote..."
-    if ! git --git-dir=.bare-repo fetch origin 2>&1; then
-        error_exit "Failed to fetch from remote"
-    fi
+    fetch_from_remote
 
     # Detect the default remote branch (main or master)
-    local default_branch=""
-    if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/main"; then
-        default_branch="origin/main"
-    elif git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/master"; then
-        default_branch="origin/master"
-    else
-        error_exit "Could not find origin/main or origin/master branch"
-    fi
+    local default_branch
+    default_branch=$(get_default_branch)
 
     # Check if branch exists on remote
     local remote_branch_exists=false
@@ -368,9 +402,7 @@ cmd_remove() {
     fi
 
     # Check if we're in a wtree repository (has .bare-repo)
-    if [ ! -d ".bare-repo" ]; then
-        error_exit "Not in a wtree repository. Run this command from the repository root (where .bare-repo exists)"
-    fi
+    verify_wtree_repo
 
     # Check if worktree exists
     if [ ! -d "$name" ]; then
@@ -393,20 +425,11 @@ cmd_remove() {
         echo "🔍 Checking merge status of branch '$branch_name'..."
 
         # Fetch latest from remote
-        echo "🔄 Fetching latest from remote..."
-        if ! git --git-dir=.bare-repo fetch origin 2>&1; then
-            echo "⚠️  Warning: Failed to fetch from remote. Merge status check may be inaccurate."
-        fi
+        fetch_from_remote "true"
 
         # Detect the default remote branch (main or master)
-        local default_branch=""
-        if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/main"; then
-            default_branch="origin/main"
-        elif git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/master"; then
-            default_branch="origin/master"
-        else
-            echo "⚠️  Warning: Could not find origin/main or origin/master branch"
-        fi
+        local default_branch
+        default_branch=$(get_default_branch "false")
 
         if [ -n "$default_branch" ]; then
             # Check if the branch is merged into the default remote branch
