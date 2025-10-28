@@ -63,8 +63,30 @@ cmd_clone() {
     if ! cat > "$init_script" << 'EOF'
 #!/bin/bash
 # Worktree initialization script
-# Add any setup commands that should run when creating new worktrees
+#
+# This script runs after each new worktree is created.
+# Add any setup commands that should run when creating new worktrees.
+#
+# Examples:
+#   - npm install / yarn install
+#   - Copy environment files
+#   - Create symlinks
+#   - Set up git hooks
+#   - Initialize databases
+#
+# The script runs from within the new worktree directory.
+# Exit with non-zero to indicate failure (will show warning but won't stop worktree creation)
 
+echo "Running worktree initialization..."
+
+# Add your initialization commands here
+# Example:
+# if [ -f package.json ]; then
+#     echo "Installing dependencies..."
+#     npm install
+# fi
+
+echo "Initialization complete!"
 EOF
     then
         rm -rf "$name"
@@ -77,14 +99,242 @@ EOF
         error_exit "Failed to make initialization script executable"
     fi
 
+    # Create README for worktree-config
+    local readme="$name/worktree-config/README.md"
+    if ! cat > "$readme" << 'EOF'
+# Worktree Configuration Directory
+
+This directory contains files and scripts that are automatically copied to each new worktree.
+
+## Files
+
+- **worktree-Init.sh**: Initialization script that runs after each worktree is created
+- Any other files in this directory will be copied to the root of new worktrees
+
+## Usage
+
+### Adding Config Files
+
+Place any files you want copied to new worktrees in this directory:
+- `.env.example` - Environment variable templates
+- `.vscode/settings.json` - Editor settings
+- `config.local.json` - Local configuration files
+- Any other files or directories
+
+### Customizing Initialization
+
+Edit `worktree-Init.sh` to add commands that should run when creating worktrees:
+```bash
+#!/bin/bash
+echo "Setting up worktree..."
+
+# Install dependencies
+npm install
+
+# Copy environment file
+cp .env.example .env
+
+# Create necessary directories
+mkdir -p logs tmp
+```
+
+### Creating Worktrees
+
+Use the `wtree.sh add` command to create new worktrees:
+```bash
+# Interactive mode (prompts if remote branch exists)
+./wtree.sh add feature-branch
+
+# Use existing remote branch
+./wtree.sh add feature-branch --from-remote
+
+# Start fresh from main/master
+./wtree.sh add feature-branch --start-fresh
+```
+EOF
+    then
+        echo "⚠️  Warning: Failed to create README in worktree-config"
+    fi
+
     echo "✅ Success! Repository cloned to '$name/.bare-repo'"
-    echo "💡 Use 'git worktree add' from within '$name' to create worktrees"
-    echo "📂 Configuration stored in '$name/worktree-config/'"
+    echo "💡 Next steps:"
+    echo "   1. cd $name"
+    echo "   2. Customize worktree-config/worktree-Init.sh for your project"
+    echo "   3. Add config files to worktree-config/ to copy to new worktrees"
+    echo "   4. Create your first worktree: wtree.sh add <branch-name>"
 }
 
 cmd_add() {
-    # TODO: Implement add functionality
-    echo "Add command not yet implemented"
+    local name=""
+    local from_remote=false
+    local start_fresh=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from-remote)
+                from_remote=true
+                shift
+                ;;
+            --start-fresh)
+                start_fresh=true
+                shift
+                ;;
+            -*)
+                error_exit "Unknown option: $1. Usage: wtree.sh add <branch-name> [--from-remote|--start-fresh]"
+                ;;
+            *)
+                if [ -z "$name" ]; then
+                    name="$1"
+                    shift
+                else
+                    error_exit "Unexpected argument: $1"
+                fi
+                ;;
+        esac
+    done
+
+    # Validate parameters
+    if [ -z "$name" ]; then
+        error_exit "Branch name is required. Usage: wtree.sh add <branch-name> [--from-remote|--start-fresh]"
+    fi
+
+    # Check for conflicting flags
+    if [ "$from_remote" = true ] && [ "$start_fresh" = true ]; then
+        error_exit "Cannot use both --from-remote and --start-fresh flags"
+    fi
+
+    # Check if we're in a wtree repository (has .bare-repo)
+    if [ ! -d ".bare-repo" ]; then
+        error_exit "Not in a wtree repository. Run this command from the repository root (where .bare-repo exists)"
+    fi
+
+    # Fetch latest from remote
+    echo "🔄 Fetching latest from remote..."
+    if ! git --git-dir=.bare-repo fetch origin 2>&1; then
+        error_exit "Failed to fetch from remote"
+    fi
+
+    # Detect the default remote branch (main or master)
+    local default_branch=""
+    if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/main"; then
+        default_branch="origin/main"
+    elif git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/master"; then
+        default_branch="origin/master"
+    else
+        error_exit "Could not find origin/main or origin/master branch"
+    fi
+
+    # Check if branch exists on remote
+    local remote_branch_exists=false
+    if git --git-dir=.bare-repo show-ref --verify --quiet "refs/remotes/origin/$name"; then
+        remote_branch_exists=true
+    fi
+
+    local base_branch=""
+
+    # Handle --from-remote flag
+    if [ "$from_remote" = true ]; then
+        if [ "$remote_branch_exists" = true ]; then
+            base_branch="origin/$name"
+            echo "✓ Using remote branch 'origin/$name'"
+        else
+            error_exit "Remote branch 'origin/$name' does not exist. Use --start-fresh to create from $default_branch"
+        fi
+    # Handle --start-fresh flag
+    elif [ "$start_fresh" = true ]; then
+        base_branch="$default_branch"
+        echo "✓ Creating new branch from $default_branch"
+    # Interactive mode (no flags)
+    elif [ "$remote_branch_exists" = true ]; then
+        echo "🌿 Remote branch 'origin/$name' exists."
+        read -p "Do you want to base your worktree off the remote branch? (y/n): " -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            base_branch="origin/$name"
+            echo "✓ Will create worktree from remote branch 'origin/$name'"
+        else
+            base_branch="$default_branch"
+            echo "✓ Will create worktree from $default_branch"
+        fi
+    else
+        base_branch="$default_branch"
+        echo "ℹ️  Branch does not exist on remote. Creating new branch from $default_branch."
+    fi
+
+    # Create the worktree
+    echo "📁 Creating worktree '$name'..."
+
+    # Create worktree from the selected base branch
+    if ! git --git-dir=.bare-repo worktree add "$name" -b "$name" "$base_branch" 2>&1; then
+        error_exit "Failed to create worktree from $base_branch"
+    fi
+
+    # Initialize the worktree with config files and scripts
+    echo "⚙️  Initializing worktree..."
+
+    # Copy config files from worktree-config to the new worktree
+    if [ -d "worktree-config" ]; then
+        # Copy all files except the init script and README
+        local copied_files=0
+
+        # Enable dotglob to match hidden files
+        shopt -s dotglob nullglob
+
+        for file in worktree-config/*; do
+            local basename_file="$(basename "$file")"
+
+            # Skip if it's the init script or README
+            if [ "$basename_file" = "worktree-Init.sh" ] || [ "$basename_file" = "README.md" ]; then
+                continue
+            fi
+
+            # Skip if no files exist (glob didn't match anything)
+            if [ ! -e "$file" ]; then
+                continue
+            fi
+
+            # Check if file already exists in worktree
+            if [ -e "$name/$basename_file" ]; then
+                echo "  ⚠️  Skipped $basename_file (already exists in worktree)"
+                continue
+            fi
+
+            # Copy file or directory
+            if cp -r "$file" "$name/"; then
+                copied_files=$((copied_files + 1))
+                echo "  ✓ Copied $basename_file"
+            else
+                echo "  ⚠️  Warning: Failed to copy $basename_file"
+            fi
+        done
+
+        # Disable dotglob
+        shopt -u dotglob nullglob
+
+        if [ $copied_files -eq 0 ]; then
+            echo "  ℹ️  No config files to copy"
+        fi
+    fi
+
+    # Run initialization script if it exists
+    if [ -x "worktree-config/worktree-Init.sh" ]; then
+        echo "  🔧 Running initialization script..."
+        if (cd "$name" && ../worktree-config/worktree-Init.sh); then
+            echo "  ✓ Initialization script completed successfully"
+        else
+            echo "  ⚠️  Warning: Initialization script failed (exit code: $?)"
+        fi
+    else
+        if [ -f "worktree-config/worktree-Init.sh" ]; then
+            echo "  ⚠️  Warning: worktree-Init.sh exists but is not executable"
+        fi
+    fi
+
+    echo "✅ Success! Worktree created at '$name'"
+    echo "💡 Use 'cd $name' to switch to the new worktree"
+
 }
 
 cmd_remove() {
