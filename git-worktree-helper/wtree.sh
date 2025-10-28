@@ -340,7 +340,6 @@ cmd_add() {
 cmd_remove() {
     local name=""
     local force=false
-    local delete_branch=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -349,12 +348,8 @@ cmd_remove() {
                 force=true
                 shift
                 ;;
-            --delete-branch|-d)
-                delete_branch=true
-                shift
-                ;;
             -*)
-                error_exit "Unknown option: $1. Usage: wtree.sh remove <worktree-name> [--force] [--delete-branch]"
+                error_exit "Unknown option: $1. Usage: wtree.sh remove <worktree-name> [--force]"
                 ;;
             *)
                 if [ -z "$name" ]; then
@@ -369,7 +364,7 @@ cmd_remove() {
 
     # Validate parameters
     if [ -z "$name" ]; then
-        error_exit "Worktree name is required. Usage: wtree.sh remove <worktree-name> [--force] [--delete-branch]"
+        error_exit "Worktree name is required. Usage: wtree.sh remove <worktree-name> [--force]"
     fi
 
     # Check if we're in a wtree repository (has .bare-repo)
@@ -462,11 +457,11 @@ cmd_remove() {
 
     echo "✅ Worktree '$name' removed successfully"
 
-    # Handle branch deletion if requested
-    if [ "$delete_branch" = true ] && [ -n "$branch_name" ]; then
-        echo "🌿 Deleting local branch '$branch_name'..."
+    # Delete the associated branch
+    if [ -n "$branch_name" ]; then
+        echo "🌿 Deleting branch '$branch_name'..."
         if git --git-dir=.bare-repo branch -d "$branch_name" 2>&1; then
-            echo "✅ Local branch '$branch_name' deleted"
+            echo "✅ Branch '$branch_name' deleted"
         else
             echo "⚠️  Could not delete branch with -d (branch may not be fully merged)"
             read -p "Force delete the branch? This will lose any unmerged changes. (y/n): " -n 1 -r
@@ -474,7 +469,7 @@ cmd_remove() {
 
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 if git --git-dir=.bare-repo branch -D "$branch_name" 2>&1; then
-                    echo "✅ Local branch '$branch_name' force deleted"
+                    echo "✅ Branch '$branch_name' force deleted"
                 else
                     echo "⚠️  Warning: Failed to delete branch '$branch_name'"
                 fi
@@ -482,10 +477,6 @@ cmd_remove() {
                 echo "ℹ️  Branch '$branch_name' was not deleted"
             fi
         fi
-    elif [ -n "$branch_name" ]; then
-        echo "💡 Tip: The local branch '$branch_name' still exists."
-        echo "   To delete it, use: git --git-dir=.bare-repo branch -d $branch_name"
-        echo "   Or run: wtree.sh remove $name --delete-branch"
     fi
 }
 
